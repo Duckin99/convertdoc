@@ -1,0 +1,5 @@
+# environment
+.venv
+
+# output
+output_fast/
