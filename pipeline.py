@@ -7,6 +7,7 @@ from docx import Document
 from docx.oxml.ns import qn
 from openai import OpenAI
 from docx.text.paragraph import Paragraph
+from docx.table import Table
 
 # ==========================================
 # 1. Asset Management (File I/O)
@@ -35,7 +36,7 @@ class AssetExtractor:
 
 
 # ==========================================
-# 2. Text Processing Module
+# 2.1 Text Processing Module
 # ==========================================
 class TextProcessor:
     """Handles parsing Word paragraphs, extracting styles, runs, and colors into Markdown."""
@@ -91,6 +92,49 @@ class TextProcessor:
             # Normal text
             return f"\n{formatted_text}\n"
 
+# ==========================================
+# 2.2 Table Processing Module
+# ==========================================
+class TableProcessor:
+    """Handles parsing native Word tables and converting them to Markdown tables."""
+    
+    @staticmethod
+    def process_table_to_markdown(table_element, parent_doc) -> str:
+        # Wrap the raw XML element in a python-docx Table object
+        table = Table(table_element, parent_doc)
+        
+        if not table.rows:
+            return ""
+
+        markdown_table = []
+        
+        # Helper function to clean cell text
+        def clean_cell(cell):
+            # Join multiple paragraphs inside a single cell with a space
+            text = " ".join(p.text.strip() for p in cell.paragraphs if p.text.strip())
+            # Escape pipe characters so they don't break the Markdown columns
+            text = text.replace("|", "\\|")
+            # Remove any stray newlines
+            text = text.replace("\n", " ").replace("\r", "")
+            return text
+
+        # 1. Process Header (Assumes the first row is the header)
+        header_cells = [clean_cell(cell) for cell in table.rows[0].cells]
+        markdown_table.append("| " + " | ".join(header_cells) + " |")
+        
+        # 2. Process Separator Row
+        # Generates the |---|---| formatting required by Markdown
+        separator = ["---"] * len(table.rows[0].cells)
+        markdown_table.append("| " + " | ".join(separator) + " |")
+        
+        # 3. Process Data Rows
+        for row in table.rows[1:]:
+            row_cells = [clean_cell(cell) for cell in row.cells]
+            # Only append the row if it actually contains text
+            if any(row_cells):
+                markdown_table.append("| " + " | ".join(row_cells) + " |")
+            
+        return "\n" + "\n".join(markdown_table) + "\n"
 
 # ==========================================
 # 3. Vision Processing Module (LLM integration)
@@ -185,7 +229,8 @@ class DocxConversionPipeline:
 
         # 2. Native Tables
         elif element.tag.endswith('tbl'):
-            self.markdown_chunks.append("\n[Native Word Table Extracted Here]\n")
+            md_table = TableProcessor.process_table_to_markdown(element, self.doc)
+            self.markdown_chunks.append(md_table)
 
         # 3. Embedded OLE Objects (Excel, Outlook)
         ole_objects = element.xpath('.//*[local-name()="OLEObject"]')
