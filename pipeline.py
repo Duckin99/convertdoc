@@ -8,6 +8,7 @@ from docx.oxml.ns import qn
 from openai import OpenAI
 from docx.text.paragraph import Paragraph
 from docx.table import Table
+import re
 
 # ==========================================
 # 1. Asset Management (File I/O)
@@ -46,29 +47,38 @@ class TextProcessor:
         if not paragraph.text.strip():
             return ""
 
-        # 1. Process Inline Formatting (The "Runs")
+        # 1. Process Inline Formatting (Bold, Italic, Underline, Color)
         formatted_text = ""
         for run in paragraph.runs:
-            text = run.text
-            if not text:
+            raw_text = run.text
+            if not raw_text:
                 continue
             
-            # Apply native Markdown formatting
+            # Separate the leading spaces, the core text, and the trailing spaces
+            match = re.match(r'^(\s*)(.*?)(\s*)$', raw_text, re.DOTALL)
+            leading_space, core_text, trailing_space = match.groups()
+
+            # If the run was literally just spaces, add them and move on
+            if not core_text:
+                formatted_text += raw_text
+                continue
+            
+            # Apply native Markdown formatting ONLY to the core text
             if run.bold:
-                text = f"**{text}**"
+                core_text = f"**{core_text}**"
             if run.italic:
-                text = f"*{text}*"
+                core_text = f"*{core_text}*"
                 
             # Apply HTML fallbacks for Underline and Color
             if run.underline:
-                text = f"<u>{text}</u>"
+                core_text = f"<u>{core_text}</u>"
             
-            # Extract Text Color (if explicitly set in Word)
             if run.font.color and run.font.color.rgb:
                 color_hex = str(run.font.color.rgb)
-                text = f'<span style="color:#{color_hex}">{text}</span>'
+                core_text = f'<span style="color:#{color_hex}">{core_text}</span>'
                 
-            formatted_text += text
+            # Reassemble the string with the spaces on the OUTSIDE of the formatting
+            formatted_text += f"{leading_space}{core_text}{trailing_space}"
 
         # 2. Process Block-Level Styles (Headings, Titles, Lists)
         style_name = paragraph.style.name.lower()
@@ -266,7 +276,7 @@ class DocxConversionPipeline:
 # Execution Entry Points
 # ==========================================
 if __name__ == "__main__":
-    DOCX_FILE = "sample_large_doc2.docx"
+    DOCX_FILE = "sample_large_doc.docx"
     
     # ---------------------------------------------------------
     # Scenario A: Fast Run (Text and placeholders only)
