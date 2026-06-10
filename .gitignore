@@ -3,3 +3,7 @@
 
 # output
 output_fast/
+
+# sample docx
+*.docx
+*.docx#
