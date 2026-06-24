@@ -39,8 +39,8 @@ class DocxPipeline:
             self.chunks.append(TableParser.parse_tbl(elem, self.doc))
 
         # 3. Text Boxes (Floating shapes in Word)
-        txbx_nodes = elem.xpath('.//w:txbxContent//w:p')
-        for node in txbx_nodes:
+        box_nodes = elem.xpath('.//*[local-name()="txbxContent"]//*[local-name()="p"]')
+        for node in box_nodes:
             p = Paragraph(node, self.doc)
             self.chunks.append(f"\n> [TextBox]: {TextParser.parse_p(p).strip()}\n")
 
