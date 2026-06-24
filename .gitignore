@@ -1,8 +1,12 @@
 # environment
 .venv
 
+# input
+input/
+pbook/
+
 # output
-output_fast/
+output/
 
 # sample docx
 *.docx
