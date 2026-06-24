@@ -11,3 +11,6 @@ output/
 # sample docx
 *.docx
 *.docx#
+
+# cache
+__pycache__
