@@ -28,44 +28,58 @@ class DocxPipeline:
         self._finalize()
 
     def _route(self, elem):
-        # 1. Standard Paragraphs
+        # 1. Text Boxes -> Render as JSON Code Blocks
+        box_nodes = elem.xpath('.//*[local-name()="txbxContent"]')
+        if box_nodes:
+            for node in box_nodes:
+                box_lines = []
+                for p_node in node.xpath('.//*[local-name()="p"]'):
+                    p = Paragraph(p_node, self.doc)
+                    if p.text.strip():
+                        # Extract raw text without markdown styling for valid JSON
+                        box_lines.append(p.text)
+                
+                if box_lines:
+                    json_str = "\n".join(box_lines)
+                    self.chunks.append(f"\n```json\n{json_str}\n```\n")
+            return # Exit early so we don't double-process the paragraphs inside the box
+
+        # 2. Standard Paragraphs
         if elem.tag.endswith('p'):
             p = Paragraph(elem, self.doc)
             self.chunks.append(TextParser.parse_p(p))
             self._find_images(elem)
 
-        # 2. Native Tables
+        # 3. Native Tables
         elif elem.tag.endswith('tbl'):
             self.chunks.append(TableParser.parse_tbl(elem, self.doc))
 
-        # 3. Text Boxes (Floating shapes in Word)
-        box_nodes = elem.xpath('.//*[local-name()="txbxContent"]//*[local-name()="p"]')
-        for node in box_nodes:
-            p = Paragraph(node, self.doc)
-            self.chunks.append(f"\n> [TextBox]: {TextParser.parse_p(p).strip()}\n")
-
-        # 4. Embedded OLE Objects (.bin / .xlsx)
-        for obj in elem.xpath('.//*[local-name()="OLEObject"]'):
-            rId = obj.get(qn('r:id'))
-            if rId:
-                fname = os.path.basename(self.doc.part.related_parts[rId].partname)
-                self.chunks.append(f"\n[Embedded Data: {fname}](./embeddings/{fname})\n")
-
-    def _find_images(self, elem):
-        imgs = elem.xpath('.//w:drawing//pic:pic//hlLink | .//w:drawing//pic:pic//a:blip/@r:embed')
-        for rId in imgs:
-            fname = os.path.basename(self.doc.part.related_parts[rId].partname)
-            
-            # Use PNG if we converted an EMF
-            img_path = self.assets.media_dir / fname
-            if fname.lower().endswith('.emf'):
-                img_path = img_path.with_suffix('.png')
-
-            if self.vision:
-                print(f"Agent interpreting image: {img_path.name}...")
-                self.chunks.append(self.vision.read_img(img_path))
+        # 4. Embedded OLE Objects (.bin) -> Map to Preview Images
+        elif elem.xpath('.//*[local-name()="OLEObject"]'):
+            # Instead of linking the .bin, we hunt for the visual preview image Word generated
+            preview_img = elem.xpath('.//*[local-name()="imagedata"]/@r:id')
+            if preview_img:
+                self._handle_image(preview_img[0])
             else:
-                self.chunks.append(f"\n![Image](./media/{img_path.name})\n")
+                # Fallback if absolutely no preview image exists
+                for obj in elem.xpath('.//*[local-name()="OLEObject"]'):
+                    rId = obj.get(qn('r:id'))
+                    if rId:
+                        fname = os.path.basename(self.doc.part.related_parts[rId].partname)
+                        self.chunks.append(f"\n[Raw Embedded Data: {fname}](./embeddings/{fname})\n")
+
+    def _handle_image(self, rId: str):
+        part = self.doc.part.related_parts[rId]
+        fname = os.path.basename(part.partname)
+        img_path = self.assets.media_dir / fname
+        if fname.lower().endswith('.emf'):
+            img_path = img_path.with_suffix('.png')
+
+        if self.vision:
+            print(f"Agent interpreting image: {img_path.name}...")
+            self.chunks.append(self.vision.read_img(img_path))
+        else:
+            self.chunks.append(f"\n![Image](./media/{img_path.name})\n")
 
     def _finalize(self):
         raw_md = "".join(self.chunks)
