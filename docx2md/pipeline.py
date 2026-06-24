@@ -81,6 +81,22 @@ class DocxPipeline:
         else:
             self.chunks.append(f"\n![Image](./media/{img_path.name})\n")
 
+    def _find_images(self, elem):
+        imgs = elem.xpath('.//w:drawing//pic:pic//hlLink | .//w:drawing//pic:pic//a:blip/@r:embed')
+        for rId in imgs:
+            fname = os.path.basename(self.doc.part.related_parts[rId].partname)
+            
+            # Use PNG if we converted an EMF
+            img_path = self.assets.media_dir / fname
+            if fname.lower().endswith('.emf'):
+                img_path = img_path.with_suffix('.png')
+
+            if self.vision:
+                print(f"Agent interpreting image: {img_path.name}...")
+                self.chunks.append(self.vision.read_img(img_path))
+            else:
+                self.chunks.append(f"\n![Image](./media/{img_path.name})\n")
+
     def _finalize(self):
         raw_md = "".join(self.chunks)
         
